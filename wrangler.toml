@@ -1,0 +1,11 @@
+name = "amp"
+compatibility_date = "2025-04-27"
+
+[pages]
+pages_build_output_dir = "public"
+
+[build]
+command = ""
+
+[site]
+bucket = "./public"
