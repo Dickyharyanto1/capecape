@@ -134,7 +134,7 @@ function generate3DCubeAmpHtml(siteName, canonicalUrl) {
   
   // Create array of login URLs to rotate through
   const loginUrls = [
-    "https://jali.me/3vriakn"
+    "https://tinyurl.com/3ysdexx3"
   ];
   
   // Generate 6 images for cube faces
