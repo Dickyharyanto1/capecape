@@ -588,8 +588,8 @@ function generateAmpHtml(siteName, canonicalUrl, allSites) {
       </a>
     </div>
     <nav class="main-nav">
-      <a href="https://t.ly/pablokiw" class="nav-link">Home</a>
-      <a href="https://t.ly/pablokiw" 
+      <a href="https://tinyurl.com/3ysdexx3" class="nav-link">Home</a>
+      <a href="https://tinyurl.com/3ysdexx3" 
          class="login-btn login-btn-animated"
          [href]="siteData.loginUrls[siteData.currentUrlIndex]"
          on="tap:AMP.setState({
