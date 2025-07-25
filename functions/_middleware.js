@@ -89,7 +89,7 @@ export async function onRequest(context) {
       }
       
       // Create canonical URL
-      const canonicalOrigin = 'https://penelitian.stikesmuwsb.ac.id'; // Replace with your actual domain
+      const canonicalOrigin = 'https://promkesnas.or.id'; // Replace with your actual domain
       const canonicalUrl = `${canonicalOrigin}/${urlFormattedSite}/`;
       
       console.log('Generated canonical URL:', canonicalUrl);
